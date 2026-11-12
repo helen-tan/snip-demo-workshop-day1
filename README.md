@@ -1,6 +1,6 @@
 # Snip
 
-One Bun backend, two clients: an Angular 19 web app and a dependency-free Node CLI.
+One Bun backend, two clients: an Angular 21 LTS web app and a dependency-free Node CLI.
 Links live in memory and disappear when the server restarts.
 
 ## Repository layout
@@ -11,7 +11,7 @@ Files live at that branch's root. `main` mounts exact commits as submodules:
 | Branch/path | Purpose |
 | --- | --- |
 | `backend` | Bun 1.x server, zero npm dependencies |
-| `frontend` | Angular 19 project `snip-frontend` |
+| `frontend` | Angular 21 LTS project `snip-frontend` |
 | `cli` | Node 20+ CommonJS CLI and shell wrappers |
 | `bundle` | Generated release: server, built UI, CLI, Docker configuration |
 | `main` | Submodule pointers, build script, release workflows |
@@ -37,7 +37,8 @@ an ISO timestamp. CORS is open and OPTIONS preflight is supported.
 
 ## Development
 
-Use separate terminals, with Bun 1.x and Node 20+ installed:
+Use separate terminals, with Bun 1.x and Node 22.12+ (22.x) or Node 24.x installed.
+The standalone CLI still supports Node 20+.
 
 ```sh
 cd backend
@@ -138,9 +139,11 @@ Release verification checks pinned source copies and manifest, frontend build
 and unit tests, CLI tests, backend/bundle smoke checks, npm dependency audit and
 Trivy image scanning. HIGH/CRITICAL findings or unavailable scanners block image
 publication; nothing is silently waived. Scanning continues after an audit failure
-only to collect both results; the final gate still fails. Angular 19 has known
-dependency advisories; upgrading Angular outside the requested version requires
-a separate decision. Do not treat generated bundle availability as release approval.
+only to collect both results; the final gate still fails. The user approved
+upgrading the tutorial's Angular 19 to Angular 21 LTS to resolve blocking
+dependency advisories. Moderate advisories remain visible in audit output; the
+HIGH/CRITICAL failure threshold has not been weakened. Do not treat generated
+bundle availability as release approval.
 
 Actions, the Bun base image and the scanner are pinned to immutable commits or
 digests; update those pins deliberately. Only the bundle job can write contents;
