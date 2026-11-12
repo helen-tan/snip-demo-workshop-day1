@@ -71,6 +71,23 @@ describe('AppComponent', () => {
     expect(fixture.componentInstance.links()).toHaveSize(1);
   });
 
+  it('handles the native form submit without navigating away', () => {
+    const fixture = TestBed.createComponent(AppComponent);
+    fixture.detectChanges();
+    http.expectOne('http://localhost:3000/api/links').flush([]);
+    fixture.componentInstance.urlControl.setValue('https://example.com');
+
+    const event = new Event('submit', { bubbles: true, cancelable: true });
+    fixture.nativeElement.querySelector('form').dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBeTrue();
+    http.expectOne((request) => request.method === 'POST').flush(
+      { error: 'Test response' },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    expect(fixture.componentInstance.apiError()).toBe('Test response');
+  });
+
   it('shows backend validation errors beside the URL field', () => {
     const fixture = TestBed.createComponent(AppComponent);
     fixture.detectChanges();
