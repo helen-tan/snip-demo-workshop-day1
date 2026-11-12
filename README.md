@@ -1,13 +1,15 @@
 # Snip frontend
 
-Angular 19 single-page client for the Snip URL shortener.
+Angular 21 LTS single-page client for the Snip URL shortener.
+The user-approved upgrade from the tutorial's Angular 19 removes the release's
+high/critical dependency findings without changing the UI or shared API.
 
 ## Run locally
 
-Start the backend on port `3000`, then run:
+Use Node 22.12+ (22.x) or Node 24.x. Start the backend on port `3000`, then run:
 
 ```sh
-npm install
+npm ci
 npx ng serve
 ```
 
