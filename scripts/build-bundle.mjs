@@ -82,7 +82,9 @@ cpSync(join(root, 'backend', 'server.js'), join(bundle, 'server.js'));
 cpSync(join(root, 'cli', 'cli.js'), join(bundle, 'cli.js'));
 cpSync(output, join(bundle, 'public'), { recursive: true });
 const licenses = join(root, 'frontend', 'dist', 'snip-frontend', '3rdpartylicenses.txt');
-if (existsSync(licenses)) cpSync(licenses, join(bundle, 'public', '3rdpartylicenses.txt'));
+if (!existsSync(licenses)) throw new Error('Missing generated third-party license notices');
+writeFileSync(join(bundle, 'public', '3rdpartylicenses.txt'),
+  readFileSync(licenses, 'utf8').replace(/\r\n?/g, '\n'));
 const write = (name, content) => writeFileSync(join(bundle, name), content);
 write('.env', 'PUBLIC_DIR=./public\n');
 write('package.json', JSON.stringify({
