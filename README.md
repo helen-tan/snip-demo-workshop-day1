@@ -87,3 +87,38 @@ Only one contributor may switch branches in a shared checkout at a time.
 Do not create ordinary folders at submodule mount paths.
 Do not add `"type":"module"` beside `cli.js`.
 The frontend output path `dist/snip-frontend/browser` is required for releases.
+
+## Generated release
+
+`bundle` is generated output, never a source-editing location.
+
+```sh
+node scripts/build-bundle.mjs
+node scripts/build-bundle.mjs
+node scripts/build-bundle.mjs --push
+```
+
+By default the builder selects current backend/frontend/CLI branch tips, records
+their exact SHAs in `bundle/release.json`, and pins those commits on `main`.
+Use `--pinned` to rebuild from the currently recorded main gitlinks instead.
+Docker publication always checks out the pinned release, never moving branch tips.
+The builder rejects dirty component worktrees and unrelated main changes, uses
+`npm ci`, and checks the exact Angular output path. Identical builds create no
+commits. `--push` also publishes commits from earlier local-only runs.
+
+```sh
+node scripts/smoke.mjs --backend
+node scripts/smoke.mjs
+cd bundle
+bun start
+```
+
+The bundle runs one process on port 3000 for UI, API and redirects. To test Docker:
+
+```sh
+docker build -t snip ./bundle
+docker run --rm -p 3000:3000 snip
+```
+
+Set `BUN_BIN` to a Bun executable path if it is not on PATH. The smoke check starts
+and stops its own server, or tests `SNIP_TEST_URL` when supplied.
