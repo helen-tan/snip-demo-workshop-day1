@@ -1,0 +1,144 @@
+name: Build and push image
+
+on:
+  push:
+    branches: [main]
+    paths: [bundle, .github/workflows/docker.yml]
+  workflow_dispatch:
+  # GITHUB_TOKEN pushes do not trigger another push workflow.
+  workflow_run:
+    workflows: [Build bundle]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      revision: ${{ steps.revision.outputs.sha }}
+      image: ${{ steps.revision.outputs.image }}
+      image_id: ${{ steps.image.outputs.imageid }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+      - id: revision
+        name: Record exact release
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.4'
+      - name: Verify pins and run source and integration checks
+        run: |
+          node scripts/verify-release.mjs
+          npm ci --prefix frontend --no-audit --no-fund
+          npm run build --prefix frontend
+          npm test --prefix frontend -- --watch=false --browsers=ChromeHeadless
+          npm test --prefix cli
+          node scripts/smoke.mjs --backend
+          node scripts/smoke.mjs
+      - name: Scan dependencies (fail closed on high or critical findings)
+        id: audit
+        continue-on-error: true
+        run: npm audit --prefix frontend --audit-level=high
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ${{ steps.revision.outputs.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: image
+        with:
+          context: ./bundle
+          file: ./bundle/Dockerfile
+          load: true
+          push: false
+          tags: snip:verify
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+      - name: Smoke-test exact image
+        run: |
+          docker run -d --name snip-verify -p 127.0.0.1:3000:3000 \
+            -e BASE_URL=http://127.0.0.1:3000 snip:verify
+          trap 'docker logs snip-verify; docker rm -f snip-verify' EXIT
+          SNIP_TEST_URL=http://127.0.0.1:3000 node scripts/smoke.mjs
+      - name: Scan exact image (fail closed on high or critical findings)
+        id: scan
+        continue-on-error: true
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb \
+            image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 snip:verify
+      - name: Enforce security gates
+        if: always()
+        env:
+          AUDIT: ${{ steps.audit.outcome }}
+          SCAN: ${{ steps.scan.outcome }}
+        run: |
+          test "$AUDIT" = success
+          test "$SCAN" = success
+      - name: Save verified image without rebuilding
+        run: docker save snip:verify -o "$RUNNER_TEMP/snip-image.tar"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-image
+          path: ${{ runner.temp }}/snip-image.tar
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-image
+          path: ${{ runner.temp }}
+      - name: Reject stale releases
+        env:
+          RELEASE: ${{ needs.verify.outputs.revision }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          test "$current" = "$RELEASE"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish only the previously verified image
+        env:
+          IMAGE: ${{ needs.verify.outputs.image }}
+          REVISION: ${{ needs.verify.outputs.revision }}
+          EXPECTED_ID: ${{ needs.verify.outputs.image_id }}
+        run: |
+          docker load -i "$RUNNER_TEMP/snip-image.tar"
+          test "$(docker image inspect snip:verify --format '{{.Id}}')" = "$EXPECTED_ID"
+          docker tag snip:verify "$IMAGE:sha-${REVISION:0:7}"
+          docker tag snip:verify "$IMAGE:latest"
+          docker push "$IMAGE:sha-${REVISION:0:7}"
+          docker push "$IMAGE:latest"

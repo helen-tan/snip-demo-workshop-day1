@@ -122,3 +122,44 @@ docker run --rm -p 3000:3000 snip
 
 Set `BUN_BIN` to a Bun executable path if it is not on PATH. The smoke check starts
 and stops its own server, or tests `SNIP_TEST_URL` when supplied.
+
+## Release automation and security
+
+`Build bundle` runs hourly and manually on `main`; no component-push trigger is
+used because its workflow exists only on `main`. Make `main` the default branch
+so GitHub schedules it. It selects source tips and records the resulting pins.
+
+`Build and push image` watches the `bundle` **gitlink**, not files inside that
+submodule, plus changes to its own workflow. It also runs manually and after a
+successful bundle workflow: pushes using `GITHUB_TOKEN` do not start a second
+push workflow. That explicit chain avoids requiring a personal access token.
+
+Release verification checks pinned source copies and manifest, frontend build
+and unit tests, CLI tests, backend/bundle smoke checks, npm dependency audit and
+Trivy image scanning. HIGH/CRITICAL findings or unavailable scanners block image
+publication; nothing is silently waived. Scanning continues after an audit failure
+only to collect both results; the final gate still fails. Angular 19 has known
+dependency advisories; upgrading Angular outside the requested version requires
+a separate decision. Do not treat generated bundle availability as release approval.
+
+Actions, the Bun base image and the scanner are pinned to immutable commits or
+digests; update those pins deliberately. Only the bundle job can write contents;
+only the publish job can write packages. The verified image is transferred as an
+artifact and loaded for publication, never rebuilt after scanning. Stale main
+revisions cannot overwrite `latest`.
+
+Successful publication produces
+`ghcr.io/helen-tan/snip-demo-workshop-day1:latest` and `:sha-<7-character-main-sha>`.
+GHCR packages may initially be private.
+
+## Railway
+
+Deployment is not automatically enabled. Prefer an approved, verified image
+digest; direct deployment of `bundle` uses its Dockerfile but is not a substitute
+for the image security gates. Do not deploy the `main` superproject as an app.
+The generated `railway.json` selects Docker and a non-mutating `/api/links`
+health check. The server binds `0.0.0.0:$PORT`; set `BASE_URL` for a custom public
+domain, otherwise Railway's public domain is used. No secret is needed by Snip.
+After deployment verify UI/assets, POST/list/redirect/hits and CLI access.
+On failure, restore the previous verified image digest; restarting or rolling
+back intentionally loses in-memory links.

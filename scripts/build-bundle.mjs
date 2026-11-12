@@ -81,13 +81,15 @@ for (const name of ['public', 'server.js', 'cli.js', '.env', 'package.json',
 cpSync(join(root, 'backend', 'server.js'), join(bundle, 'server.js'));
 cpSync(join(root, 'cli', 'cli.js'), join(bundle, 'cli.js'));
 cpSync(output, join(bundle, 'public'), { recursive: true });
+const licenses = join(root, 'frontend', 'dist', 'snip-frontend', '3rdpartylicenses.txt');
+if (existsSync(licenses)) cpSync(licenses, join(bundle, 'public', '3rdpartylicenses.txt'));
 const write = (name, content) => writeFileSync(join(bundle, name), content);
 write('.env', 'PUBLIC_DIR=./public\n');
 write('package.json', JSON.stringify({
   name: 'snip-bundle', private: true, scripts: { start: 'bun server.js' },
 }, null, 2) + '\n');
 write('Dockerfile', [
-  'FROM oven/bun:1-alpine',
+  'FROM oven/bun:1-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a',
   'WORKDIR /app',
   'COPY --chown=bun:bun . .',
   'ENV PORT=3000',
